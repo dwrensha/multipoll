@@ -1,4 +1,5 @@
 use futures::{Future};
+use futures::sync::oneshot;
 
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
@@ -127,6 +128,23 @@ impl <T, E> PollerHandle<T, E> where T: 'static, E: 'static {
                 }
             }
         }
+    }
+}
+
+
+impl <E> PollerHandle<(), E> where E: 'static {
+    // Transform a future into a new future that gets executed even if it is never polled.
+    // Dropping the returned future cancels the computation.
+    pub fn add_cancelable<T, F>(&mut self, f: F) -> Box<Future<Item=Result<T, E>, Error=oneshot::Canceled>>
+        where F: Future<Item=T, Error=E> + 'static,
+              T: 'static
+    {
+        let (tx, rx) = oneshot::channel();
+        let (tx2, rx2) = oneshot::channel::<()>();
+        self.add(
+            f.then(move |r| {tx.complete(r); Ok(())}).select(rx2.then(|_| Ok(())))
+                .map_err(|e| e.0).map(|_| ()));
+        Box::new(rx.then(|v| { tx2.complete(()); v}))
     }
 }
 
