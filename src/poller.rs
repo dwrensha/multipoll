@@ -41,16 +41,17 @@ pub struct Poller<T, E> {
 }
 
 impl<T, E> Poller<T, E> where T: 'static, E: 'static {
-    pub fn new(reaper: Box<Finisher<T, E>>)
+    pub fn new<F>(finisher: F)
                -> (PollerHandle<T, E>, Poller<T, E>)
         where E: 'static, T: 'static, E: ::std::fmt::Debug,
+              F: Finisher<T, E> + 'static
     {
         let inner = Rc::new(Inner {
             futures: RefCell::new(Vec::new()),
             next_future: Cell::new(0),
             new_futures: RefCell::new(Vec::new()),
             stack: Arc::new(Stack::new()),
-            reaper: RefCell::new(reaper),
+            reaper: RefCell::new(Box::new(finisher)),
             terminate_with: RefCell::new(None),
             handle_count: Cell::new(1),
             task: RefCell::new(None),
@@ -150,8 +151,8 @@ impl <E> PollerHandle<(), E> where E: 'static {
 
 pub trait Finisher<T, E> where T: 'static, E: 'static
 {
-    fn task_succeeded(&mut self, _value: T) {}
-    fn task_failed(&mut self, error: E);
+    fn done_ok(&mut self, _value: T) {}
+    fn done_err(&mut self, error: E);
 }
 
 impl <T, E> Future for Poller<T, E> where T: 'static, E: 'static {
@@ -191,10 +192,10 @@ impl <T, E> Future for Poller<T, E> where T: 'static, E: 'static {
                     match ::futures::task::with_unpark_event(event, || f.poll()) {
                         Ok(::futures::Async::NotReady) => continue,
                         Ok(::futures::Async::Ready(v)) => {
-                            self.inner.reaper.borrow_mut().task_succeeded(v);
+                            self.inner.reaper.borrow_mut().done_ok(v);
                         }
                         Err(e) => {
-                            self.inner.reaper.borrow_mut().task_failed(e);
+                            self.inner.reaper.borrow_mut().done_err(e);
                         }
                     }
                 }
