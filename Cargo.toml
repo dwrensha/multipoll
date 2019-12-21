@@ -5,4 +5,4 @@ authors = ["David Renshaw <david@sandstorm.io>"]
 license = "MIT"
 
 [dependencies]
-futures = "0.1"
+futures = "0.3"
